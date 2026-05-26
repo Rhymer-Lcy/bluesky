@@ -18,26 +18,26 @@ class Disturbance(Entity, replaceable=True):
     def __init__(self):
         super().__init__()
         
-        # 扰动开关
+        # Disturbance on/off switch
         self.enabled = False
         
-        # 位置扰动参数 (GPS误差、导航偏差)
-        self.pos_noise_std = 10.0  # [m] 位置噪声标准差
-        self.pos_drift_rate = 0.1  # [m/s] 位置漂移速率
+        # Position disturbance parameters (GPS errors, navigation drift)
+        self.pos_noise_std = 10.0  # [m]   position noise standard deviation
+        self.pos_drift_rate = 0.1  # [m/s] position drift rate
         
-        # 速度扰动参数 (风扰动、发动机不稳定)
-        self.spd_noise_std = 2.0   # [m/s] 速度噪声标准差
-        self.spd_drift_rate = 0.05 # [m/s^2] 速度漂移率
+        # Speed disturbance parameters (wind turbulence, engine instability)
+        self.spd_noise_std = 2.0   # [m/s]  speed noise standard deviation
+        self.spd_drift_rate = 0.05 # [m/s²] speed drift rate
         
-        # 航向扰动参数 (控制系统延迟、风切变)
-        self.hdg_noise_std = 2.0   # [deg] 航向噪声标准差
-        self.hdg_drift_rate = 0.1  # [deg/s] 航向漂移速率
+        # Heading disturbance parameters (control system delays, wind shear)
+        self.hdg_noise_std = 2.0   # [deg]   heading noise standard deviation
+        self.hdg_drift_rate = 0.1  # [deg/s] heading drift rate
         
-        # 高度扰动参数 (大气扰动、高度保持误差)
-        self.alt_noise_std = 5.0   # [m] 高度噪声标准差
-        self.alt_drift_rate = 0.2  # [m/s] 高度漂移速率
+        # Altitude disturbance parameters (atmospheric disturbance, altitude hold errors)
+        self.alt_noise_std = 5.0   # [m]   altitude noise standard deviation
+        self.alt_drift_rate = 0.2  # [m/s] altitude drift rate
         
-        # 扰动预设配置
+        # Disturbance preset configurations
         self.presets = {
             'none': {
                 'pos_noise_std': 0.0,
@@ -81,25 +81,25 @@ class Disturbance(Entity, replaceable=True):
             }
         }
         
-        # 每架飞机的扰动状态
+        # Per-aircraft disturbance state arrays
         with self.settrafarrays():
-            # 位置累积漂移 [m]
+            # Accumulated position drift [m]
             self.pos_drift_north = np.array([])
             self.pos_drift_east = np.array([])
             
-            # 速度累积漂移 [m/s]
+            # Accumulated speed drift [m/s]
             self.spd_drift = np.array([])
             
-            # 航向累积漂移 [deg]
+            # Accumulated heading drift [deg]
             self.hdg_drift = np.array([])
             
-            # 高度累积漂移 [m]
+            # Accumulated altitude drift [m]
             self.alt_drift = np.array([])
     
     def create(self, n=1):
-        """创建新飞行器时初始化扰动状态"""
+        """ Initialize disturbance state for newly created aircraft. """
         super().create(n)
-        # 初始化扰动为0
+        # Reset disturbance to zero for new aircraft
         self.pos_drift_north[-n:] = 0.0
         self.pos_drift_east[-n:] = 0.0
         self.spd_drift[-n:] = 0.0
@@ -107,22 +107,22 @@ class Disturbance(Entity, replaceable=True):
         self.alt_drift[-n:] = 0.0
     
     def reset(self):
-        """重置扰动系统"""
+        """ Reset the disturbance system. """
         super().reset()
         self.enabled = False
     
     def set_preset(self, preset_name: str):
         """
-        设置扰动预设配置
+        Apply a named disturbance preset.
 
-        参数:
-            preset_name: 预设名称 ('none', 'light', 'medium', 'heavy')
+        Args:
+            preset_name: one of 'none', 'light', 'medium', 'heavy'
 
-        返回:
-            (success, message)
+        Returns:
+            (success: bool, message: str)
         """
         if preset_name not in self.presets:
-            return False, f"未知预设: {preset_name}. 可用: {list(self.presets.keys())}"
+            return False, f"Unknown preset: {preset_name}. Available: {list(self.presets.keys())}"
 
         preset = self.presets[preset_name]
         self.pos_noise_std = preset['pos_noise_std']
@@ -134,36 +134,37 @@ class Disturbance(Entity, replaceable=True):
         self.alt_noise_std = preset['alt_noise_std']
         self.alt_drift_rate = preset['alt_drift_rate']
 
-        # 'none' 预设关闭扰动；其他预设开启
+        # 'none' preset disables disturbance; all others enable it
         self.enabled = (preset_name != 'none')
 
-        # 重置所有飞行器的累积漂移
+        # Reset accumulated drift for all aircraft
         self.pos_drift_north[:] = 0.0
         self.pos_drift_east[:] = 0.0
         self.spd_drift[:] = 0.0
         self.hdg_drift[:] = 0.0
         self.alt_drift[:] = 0.0
 
-        return True, f"已设置扰动预设: {preset_name} ({'enabled' if self.enabled else 'disabled'})"
+        return True, f"Disturbance preset set to '{preset_name}' ({'enabled' if self.enabled else 'disabled'})"
 
     # ------------------------------------------------------------------
-    # 自然分布概率密度（重要性采样所需）
+    # Natural distribution log-probability (required for importance sampling)
     # ------------------------------------------------------------------
     def natural_log_prob(self, dnorth=0.0, deast=0.0,
                          dspd=0.0, dhdg=0.0, dalt=0.0):
-        """计算给定扰动量在当前自然分布下的对数概率密度。
+        """Compute the log probability density of the given disturbance vector.
 
-        以高斯白噪声项的密度作为近似（累积漂移项视为状态而非动作）。
-        当扰动关闭或对应方差为 0 时，相应项概率为 1（log_prob=0）。
+        Uses Gaussian white-noise terms as an approximation (accumulated drift
+        is treated as state rather than action). When disturbance is disabled
+        or the corresponding standard deviation is 0, the term contributes 0.
 
-        参数:
-            dnorth, deast: 位置扰动 [m]
-            dspd: 速度扰动 [m/s]
-            dhdg: 航向扰动 [deg]
-            dalt: 高度扰动 [m]
+        Args:
+            dnorth, deast: position disturbance [m]
+            dspd: speed disturbance [m/s]
+            dhdg: heading disturbance [deg]
+            dalt: altitude disturbance [m]
 
-        返回:
-            float: 总对数概率密度
+        Returns:
+            float: total log probability density
         """
         log_p = 0.0
         if self.enabled:
@@ -181,26 +182,26 @@ class Disturbance(Entity, replaceable=True):
     
     def get_position_disturbance(self, dt):
         """
-        计算位置扰动
+        Compute per-aircraft position disturbance.
         
-        返回:
-            dnorth, deast: 北向和东向的位置偏移 [m]
+        Returns:
+            dnorth, deast: north and east position offsets [m]
         """
         if not self.enabled or bs.traf.ntraf == 0:
             return np.zeros(bs.traf.ntraf), np.zeros(bs.traf.ntraf)
         
-        # 高斯白噪声
+        # Gaussian white noise
         noise_north = np.random.normal(0, self.pos_noise_std, bs.traf.ntraf)
         noise_east = np.random.normal(0, self.pos_noise_std, bs.traf.ntraf)
         
-        # 累积漂移 (随机游走)
+        # Accumulated drift (random walk)
         drift_north = np.random.normal(0, self.pos_drift_rate * dt, bs.traf.ntraf)
         drift_east = np.random.normal(0, self.pos_drift_rate * dt, bs.traf.ntraf)
         
         self.pos_drift_north += drift_north
         self.pos_drift_east += drift_east
         
-        # 总扰动 = 白噪声 + 累积漂移
+        # Total disturbance = white noise + accumulated drift
         dnorth = noise_north + self.pos_drift_north
         deast = noise_east + self.pos_drift_east
         
@@ -208,78 +209,78 @@ class Disturbance(Entity, replaceable=True):
     
     def get_speed_disturbance(self, dt):
         """
-        计算速度扰动
+        Compute per-aircraft speed disturbance.
         
-        返回:
-            dspd: 速度偏移 [m/s]
+        Returns:
+            dspd: speed offset [m/s]
         """
         if not self.enabled or bs.traf.ntraf == 0:
             return np.zeros(bs.traf.ntraf)
         
-        # 高斯白噪声
+        # Gaussian white noise
         noise = np.random.normal(0, self.spd_noise_std, bs.traf.ntraf)
         
-        # 累积漂移
+        # Accumulated drift
         drift = np.random.normal(0, self.spd_drift_rate * dt, bs.traf.ntraf)
         self.spd_drift += drift
         
-        # 限制累积漂移幅度（避免无限增长）
+        # Clamp accumulated drift to prevent unbounded growth
         max_drift = self.spd_noise_std * 3
         self.spd_drift = np.clip(self.spd_drift, -max_drift, max_drift)
         
-        # 总扰动
+        # Total disturbance
         dspd = noise + self.spd_drift
         
         return dspd
     
     def get_heading_disturbance(self, dt):
         """
-        计算航向扰动
+        Compute per-aircraft heading disturbance.
         
-        返回:
-            dhdg: 航向偏移 [deg]
+        Returns:
+            dhdg: heading offset [deg]
         """
         if not self.enabled or bs.traf.ntraf == 0:
             return np.zeros(bs.traf.ntraf)
         
-        # 高斯白噪声
+        # Gaussian white noise
         noise = np.random.normal(0, self.hdg_noise_std, bs.traf.ntraf)
         
-        # 累积漂移
+        # Accumulated drift
         drift = np.random.normal(0, self.hdg_drift_rate * dt, bs.traf.ntraf)
         self.hdg_drift += drift
         
-        # 限制累积漂移幅度
+        # Clamp accumulated drift
         max_drift = self.hdg_noise_std * 5
         self.hdg_drift = np.clip(self.hdg_drift, -max_drift, max_drift)
         
-        # 总扰动
+        # Total disturbance
         dhdg = noise + self.hdg_drift
         
         return dhdg
     
     def get_altitude_disturbance(self, dt):
         """
-        计算高度扰动
+        Compute per-aircraft altitude disturbance.
         
-        返回:
-            dalt: 高度偏移 [m]
+        Returns:
+            dalt: altitude offset [m]
         """
         if not self.enabled or bs.traf.ntraf == 0:
             return np.zeros(bs.traf.ntraf)
         
-        # 高斯白噪声
+        # Gaussian white noise
         noise = np.random.normal(0, self.alt_noise_std, bs.traf.ntraf)
         
-        # 累积漂移
+        # Accumulated drift
         drift = np.random.normal(0, self.alt_drift_rate * dt, bs.traf.ntraf)
         self.alt_drift += drift
         
-        # 限制累积漂移幅度
+        # Clamp accumulated drift
         max_drift = self.alt_noise_std * 4
         self.alt_drift = np.clip(self.alt_drift, -max_drift, max_drift)
         
-        # 总扰动
+        # Total disturbance
         dalt = noise + self.alt_drift
         
         return dalt

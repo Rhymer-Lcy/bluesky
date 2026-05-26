@@ -25,6 +25,7 @@ from .turbulence import Turbulence
 from .trafficgroups import TrafficGroups
 from .performance.perfbase import PerfBase
 from .disturbance import Disturbance
+from .no_fly_zone import NoFlyZone
 
 # Register settings defaults
 bs.settings.set_variable_defaults(performance_model='openap', asas_dt=1.0)
@@ -138,6 +139,7 @@ class Traffic(Entity):
             self.actwp    = ActiveWaypoint()
             self.perf     = PerfBase()
             self.disturb  = Disturbance()  # natural disturbance module
+            self.nfz      = NoFlyZone()  # no-fly-zone management module
 
             # Group Logic
             self.groups = TrafficGroups()

@@ -286,7 +286,18 @@ class Windfield():
             return list(vnorth),list(veast)
 
         else:
-            return float(vnorth),float(veast)
+            # Convert to scalar if it's an array with single element
+            if isinstance(vnorth, ndarray):
+                vnorth_scalar = float(vnorth.flat[0])
+            else:
+                vnorth_scalar = float(vnorth)
+            
+            if isinstance(veast, ndarray):
+                veast_scalar = float(veast.flat[0])
+            else:
+                veast_scalar = float(veast)
+            
+            return vnorth_scalar, veast_scalar
 
     def remove(self,idx): # remove a point using the returned index when it was added
         if idx<len(self.lat):

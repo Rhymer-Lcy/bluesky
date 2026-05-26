@@ -24,6 +24,7 @@ from .activewpdata import ActiveWaypoint
 from .turbulence import Turbulence
 from .trafficgroups import TrafficGroups
 from .performance.perfbase import PerfBase
+from .disturbance import Disturbance
 
 # Register settings defaults
 bs.settings.set_variable_defaults(performance_model='openap', asas_dt=1.0)
@@ -136,6 +137,7 @@ class Traffic(Entity):
             self.trails   = Trails()
             self.actwp    = ActiveWaypoint()
             self.perf     = PerfBase()
+            self.disturb  = Disturbance()  # natural disturbance module
 
             # Group Logic
             self.groups = TrafficGroups()
@@ -435,6 +437,12 @@ class Traffic(Entity):
         self.ax = need_ax * np.sign(delta_spd) * self.perf.axmax
         # Update velocities
         self.tas = np.where(need_ax, self.tas + self.ax * bs.sim.simdt, self.aporasas.tas)
+        
+        # apply speed disturbance
+        if self.disturb.enabled:
+            dspd = self.disturb.get_speed_disturbance(bs.sim.simdt)
+            self.tas = np.maximum(self.tas + dspd, 10.0)  # ensure speed stays non-negative
+        
         self.cas = vtas2cas(self.tas, self.alt)
         self.M = vtas2mach(self.tas, self.alt)
 
@@ -450,6 +458,11 @@ class Traffic(Entity):
         # Update heading
         self.hdg = np.where(self.swhdgsel, 
                             self.hdg + bs.sim.simdt * turnrate * np.sign(delhdg), self.aporasas.hdg) % 360.0
+        
+        # apply heading disturbance
+        if self.disturb.enabled:
+            dhdg = self.disturb.get_heading_disturbance(bs.sim.simdt)
+            self.hdg = (self.hdg + dhdg) % 360.0
 
         # Update vertical speed (alt select, capture and hold autopilot mode)
         delta_alt = self.aporasas.alt - self.alt
@@ -498,9 +511,29 @@ class Traffic(Entity):
     def update_pos(self):
         # Update position
         self.alt = np.where(self.swaltsel, np.round(self.alt + self.vs * bs.sim.simdt, 6), self.aporasas.alt)
-        self.lat = self.lat + np.degrees(bs.sim.simdt * self.gsnorth / Rearth)
+        
+        # apply altitude disturbance
+        if self.disturb.enabled:
+            dalt = self.disturb.get_altitude_disturbance(bs.sim.simdt)
+            self.alt = np.maximum(self.alt + dalt, 0.0)  # ensure altitude stays non-negative
+        
+        # compute position update
+        dlat_base = np.degrees(bs.sim.simdt * self.gsnorth / Rearth)
+        dlon_base_factor = bs.sim.simdt * self.gseast / Rearth
+        
+        # apply position disturbance
+        if self.disturb.enabled:
+            dnorth, deast = self.disturb.get_position_disturbance(bs.sim.simdt)
+            dlat_disturb = np.degrees(dnorth / Rearth)
+            dlon_disturb_factor = deast / Rearth
+        else:
+            dlat_disturb = 0.0
+            dlon_disturb_factor = 0.0
+        
+        # update position
+        self.lat = self.lat + dlat_base + dlat_disturb
         self.coslat = np.cos(np.deg2rad(self.lat))
-        self.lon = self.lon + np.degrees(bs.sim.simdt * self.gseast / self.coslat / Rearth)
+        self.lon = self.lon + np.degrees((dlon_base_factor + dlon_disturb_factor) / self.coslat)
         self.distflown += self.gs * bs.sim.simdt
 
     def id2idx(self, acid):
